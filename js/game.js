@@ -667,6 +667,74 @@ function drawPlayer() {
   if (dorm) { cx.strokeStyle = 'rgba(255,245,220,0.9)'; cx.lineWidth = 2.5; cx.beginPath(); cx.ellipse(h.x, h.y, 11, 8, h.a, 0, 6.283); cx.stroke(); }
 }
 
+
+// ---------- indicadores de portales (subir / bajar de nicho) ----------
+function portalInfo(p) {
+  const nl = clamp(G.layer + p.dir, 0, LAYERS.length - 1), L = LAYERS[nl], s = T_();
+  const last = p.dir > 0 && G.layer === LAYERS.length - 1;
+  const wNext = last ? 1 : fitness(G.g, L.entry, null); // cómo te iría al llegar
+  return {
+    col: p.dir > 0 ? [255, 130, 90] : [120, 190, 255],
+    glyph: p.dir > 0 ? '▼' : '▲',
+    l1: (p.dir > 0 ? s.deeper : s.up) + ' · ' + (last ? s.endT : L.name[lang]),
+    l2: last ? '' : `${fmt('T', L.core.T)} · pH ${fmt('pH', L.core.pH)} · ${fmt('S', L.core.S)}`,
+    wc: wNext > 0.45 ? '#9dffb0' : wNext > 0.12 ? '#ffd66b' : '#ff7a7a',
+  };
+}
+function drawPortalHints() {
+  const u = U, head = G.segs[0], t = G.t;
+  for (const p of G.portals) {
+    const inf = portalInfo(p);
+    const sx = (p.x - G.cam.x) * G.cam.z + W / 2, sy = (p.y - G.cam.y) * G.cam.z + H / 2;
+    const dist = Math.hypot(p.x - head.x, p.y - head.y);
+    const um = Math.round(dist * 0.15);
+    const pul = 0.5 + 0.5 * Math.sin(t * 3 + p.dir);
+    // brújula alrededor de la bacteria
+    const hx = (head.x - G.cam.x) * G.cam.z + W / 2, hy = (head.y - G.cam.y) * G.cam.z + H / 2;
+    const ha = Math.atan2(p.y - head.y, p.x - head.x), hr = 46 * G.cam.z + 10 * u;
+    if (dist > 120) {
+      cx.save(); cx.translate(hx + Math.cos(ha) * hr, hy + Math.sin(ha) * hr); cx.rotate(ha);
+      cx.fillStyle = rgb(inf.col, 0.35 + 0.3 * pul);
+      cx.beginPath(); cx.moveTo(9 * u, 0); cx.lineTo(-5 * u, -7 * u); cx.lineTo(-1 * u, 0); cx.lineTo(-5 * u, 7 * u); cx.fill(); cx.restore();
+    }
+    const on = sx > 30 && sx < W - 30 && sy > 30 && sy < H - 30;
+    let bx, by;
+    if (on) { bx = clamp(sx, 140 * u, W - 140 * u); by = sy + 44 * u * G.cam.z + 18 * u; if (by > H - 190 * u) by = sy - 44 * u * G.cam.z - 24 * u; }
+    else {
+      // insignia en el borde de la pantalla, en la dirección del portal
+      const a = Math.atan2(sy - H / 2, sx - W / 2), mx = 30 * u, mtop = 70 * u, mbot = 190 * u;
+      const k = Math.min(Math.abs((W / 2 - mx) / (Math.cos(a) || 1e-6)), Math.abs(((Math.sin(a) > 0 ? H / 2 - mbot : H / 2 - mtop)) / (Math.sin(a) || 1e-6)));
+      const ex = W / 2 + Math.cos(a) * k, ey = H / 2 + Math.sin(a) * k;
+      cx.globalCompositeOperation = 'lighter'; glow(ex, ey, 34 * u, inf.col, 0.25 + 0.2 * pul); cx.globalCompositeOperation = 'source-over';
+      cx.fillStyle = 'rgba(2,10,18,0.6)'; cx.beginPath(); cx.arc(ex, ey, 15 * u, 0, 6.283); cx.fill();
+      cx.strokeStyle = rgb(inf.col, 0.9); cx.lineWidth = 1.5 * u; cx.beginPath(); cx.arc(ex, ey, (15 + 3 * pul) * u, 0, 6.283); cx.stroke();
+      cx.save(); cx.translate(ex, ey); cx.rotate(a); cx.fillStyle = rgb(inf.col, 0.95);
+      cx.beginPath(); cx.moveTo(27 * u, 0); cx.lineTo(19 * u, -6 * u); cx.lineTo(19 * u, 6 * u); cx.fill(); cx.restore();
+      cx.fillStyle = rgb(inf.col, 1); cx.font = `${13 * u}px system-ui, sans-serif`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.fillText(inf.glyph, ex, ey + 1 * u); cx.textBaseline = 'alphabetic';
+      // etiqueta hacia el centro
+      const right = ex > W / 2;
+      bx = ex + (right ? -1 : 1) * 0; by = ey + (ey < H / 2 ? 34 * u : -44 * u);
+      if (Math.abs(ey - H / 2) < H / 2 - 120 * u) { bx = ex + (right ? -26 : 26) * u - (right ? 0 : 0); by = ey - 8 * u; cx.textAlign = right ? 'right' : 'left'; }
+      else cx.textAlign = 'center';
+      if (cx.textAlign === 'center') bx = clamp(ex, 120 * u, W - 120 * u);
+    }
+    if (on) cx.textAlign = 'center';
+    // texto: destino, condiciones, distancia y aptitud esperada al llegar
+    cx.font = `${12 * u}px system-ui, sans-serif`; cx.fillStyle = rgb(inf.col, 0.95);
+    cx.shadowColor = 'rgba(0,0,0,0.8)'; cx.shadowBlur = 6;
+    cx.fillText(`${inf.glyph} ${inf.l1}`, bx, by);
+    cx.font = `${11 * u}px system-ui, sans-serif`; cx.fillStyle = 'rgba(225,240,255,0.75)';
+    const l2 = (inf.l2 ? inf.l2 + '   ' : '') + um + ' µm';
+    cx.fillText(l2, bx, by + 15 * u);
+    // punto de aptitud prevista
+    const tw = cx.measureText(l2).width, al = cx.textAlign;
+    const dx = al === 'left' ? bx + tw + 8 * u : al === 'right' ? bx - tw - 8 * u : bx + tw / 2 + 8 * u;
+    cx.fillStyle = inf.wc; cx.beginPath(); cx.arc(dx, by + 11 * u, 3.5 * u, 0, 6.283); cx.fill();
+    cx.shadowBlur = 0;
+  }
+}
+
 // ---------- HUD ----------
 function drawHUD() {
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -676,15 +744,7 @@ function drawHUD() {
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,6,0.55)'); cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
   if (G.trans) { const k = G.t - G.trans.t0; const a = k < 1.6 ? sstep(0.6, 1.6, k) : 1 - sstep(1.6, 2.8, k); cx.fillStyle = `rgba(230,245,255,${a * 0.9})`; cx.fillRect(0, 0, W, H); }
   if (G.mode === 'title') return;
-  // indicadores de portal fuera de pantalla
-  for (const p of G.portals) {
-    const sx = (p.x - G.cam.x) * G.cam.z + W / 2, sy = (p.y - G.cam.y) * G.cam.z + H / 2;
-    if (sx > 0 && sx < W && sy > 0 && sy < H) continue;
-    const a = Math.atan2(sy - H / 2, sx - W / 2), m = 26;
-    const ex = clamp(W / 2 + Math.cos(a) * W, m, W - m), ey = clamp(H / 2 + Math.sin(a) * H, m, H - m);
-    cx.save(); cx.translate(ex, ey); cx.rotate(a); cx.fillStyle = p.dir > 0 ? 'rgba(255,140,100,0.55)' : 'rgba(120,190,255,0.5)';
-    cx.beginPath(); cx.moveTo(8, 0); cx.lineTo(-5, -6); cx.lineTo(-2, 0); cx.lineTo(-5, 6); cx.fill(); cx.restore();
-  }
+  drawPortalHints();
   const u = U, pw = 168 * u, ph = 46 * u, x0 = 14 * u;
   let y0 = H - 14 * u - ph * 3 - 8 * u * 2;
   const rows = [['T', s.temp, e.T], ['pH', s.ph, e.pH], ['S', s.salt, e.S]];
@@ -880,7 +940,7 @@ function startGame(fresh) {
   if (sv && sv.g) { G.g = clampG(sv.g); G.traits = new Set(sv.traits || []); G.deepest = sv.deepest || 0; G.stats = sv.stats || G.stats; G.trail = sv.trail || []; G.seen = sv.seen || {}; L0 = sv.layer || 0; }
   G.off = { T: 0, pH: 0, S: 0 }; G.biomass = 0; G.grace = 10;
   G.mode = 'play'; resetPlayer(4, 0, 0); enterLayer(L0);
-  setTimeout(() => cap('intro'), 2500);
+  setTimeout(() => cap('intro'), 2500); setTimeout(() => cap('portal'), 12000);
 }
 
 // arranque: modo atracción en la charca

@@ -13,7 +13,8 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 ## Controles
 - Nadas hacia el cursor o el dedo. Clic / toque = impulso. Teclado: WASD o flechas, espacio = impulso.
 - **N** (o el botón ◎): mapa del nicho. **M**: sonido. **ES/EN**: idioma. **i**: cómo se juega y fuentes.
-- Orbe rojo: ambiente más extremo. Orbe azul: volver a la capa anterior. El progreso se guarda solo (localStorage).
+- Orbe rojo ▼: ambiente más extremo. Orbe azul ▲: volver a la capa anterior. Cuando no se ven, una insignia en el borde de la pantalla y dos flechitas alrededor de tu bacteria apuntan hacia ellos, con el destino, sus condiciones (T, pH, sal), la distancia en µm y un punto de color que anticipa cómo te iría al llegar (verde bien, amarillo estrés, rojo muy difícil).
+- El progreso se guarda solo (localStorage).
 
 ## Qué es real en el juego
 | Mecánica | Concepto | Base |
