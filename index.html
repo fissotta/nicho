@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>NICHO — una corriente de adaptación</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Juego relajante de evolución bacteriana: adaptación a temperatura, pH y salinidad en ambientes extremos reales.">
+<meta name="theme-color" content="#04121c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%2304121c%27/%3E%3Crect x=%274%27 y=%2712%27 width=%2711%27 height=%278%27 rx=%274%27 fill=%27%237fe0b0%27/%3E%3Crect x=%2716%27 y=%2712%27 width=%2711%27 height=%278%27 rx=%274%27 fill=%27%23ffb070%27/%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #04121c; color: #e6f4ff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas { display: block; position: fixed; inset: 0; cursor: crosshair; }
+  #title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: opacity 1.6s ease; z-index: 5;
+    background: radial-gradient(ellipse at center, rgba(4,18,28,0) 0%, rgba(2,8,14,0.55) 75%); }
+  #title.gone { opacity: 0; pointer-events: none; }
+  #title h1 { font-weight: 200; font-size: clamp(54px, 13vw, 132px); letter-spacing: 0.32em; margin: 0 0 0 0.32em; text-shadow: 0 0 40px rgba(120,230,200,0.35); }
+  #title .sub { font-weight: 300; letter-spacing: 0.25em; opacity: 0.7; font-size: clamp(12px, 2.2vw, 17px); margin-top: 6px; text-transform: lowercase; }
+  #title .start { margin-top: 9vh; font-size: 14px; letter-spacing: 0.18em; opacity: 0.85; animation: breathe 3.5s ease-in-out infinite; }
+  #title .hint { margin-top: 14px; font-size: 12px; opacity: 0.45; text-align: center; padding: 0 16px; }
+  #tNew { margin-top: 18px; background: none; border: 1px solid rgba(255,255,255,0.25); color: #cfe; border-radius: 20px; padding: 5px 14px; font-size: 12px; cursor: pointer; }
+  @keyframes breathe { 0%,100% { opacity: 0.35; } 50% { opacity: 0.95; } }
+  #ui { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 6; }
+  #ui button { width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,10,20,0.35); color: #dff; font-size: 14px; cursor: pointer; backdrop-filter: blur(4px); }
+  #ui button:hover { background: rgba(255,255,255,0.12); }
+  #ui button.off { opacity: 0.45; }
+  #cap { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(620px, 70vw); text-align: center; font-size: 14px; line-height: 1.45; color: #eaf6ff;
+    opacity: 0; transition: opacity 0.9s ease; pointer-events: none; text-shadow: 0 1px 8px #000; z-index: 4; }
+  #cap.show { opacity: 0.95; }
+  #note { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); font-size: 14px; letter-spacing: 0.04em; opacity: 0; transition: opacity 1.2s; pointer-events: none; text-shadow: 0 1px 8px #000; z-index: 4; }
+  #note.show { opacity: 0.9; }
+  .dim { opacity: 0.6; }
+  #card { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; opacity: 0; transition: opacity 1.8s ease; pointer-events: none; z-index: 4; text-shadow: 0 2px 14px #000; width: 90vw; }
+  #card.show { opacity: 1; }
+  #card h2 { font-weight: 200; font-size: clamp(26px, 5vw, 44px); letter-spacing: 0.12em; margin: 6px 0 2px; }
+  #card .pl { opacity: 0.65; font-size: 14px; letter-spacing: 0.08em; }
+  #card .vals { margin-top: 14px; display: flex; gap: 22px; justify-content: center; font-size: 15px; opacity: 0.9; }
+  #card .org { margin-top: 12px; font-size: 13px; opacity: 0.6; font-style: italic; }
+  #card .depth { letter-spacing: 6px; font-size: 10px; opacity: 0.5; }
+  #info { position: fixed; inset: 0; background: rgba(2,8,14,0.7); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #info.open { display: flex; }
+  #infoBody { width: min(720px, 92vw); max-height: 84vh; overflow: auto; background: rgba(6,22,34,0.96); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 18px 24px; font-size: 13px; line-height: 1.5; user-select: text; -webkit-user-select: text; }
+  #infoBody h3 { font-weight: 300; letter-spacing: 0.1em; margin: 8px 0; }
+  #infoBody ol { padding-left: 20px; opacity: 0.8; font-size: 12px; }
+  #infoBody .cred { text-align: center; opacity: 0.7; font-size: 12px; }
+  #infoBody .cred img { width: 220px; max-width: 70%; filter: brightness(1.1); background: rgba(255,255,255,0.9); border-radius: 8px; padding: 6px 10px; }
+  #endui { position: fixed; left: 0; right: 0; bottom: 22px; display: none; flex-direction: column; align-items: center; gap: 10px; z-index: 7; }
+  #endui .st { font-size: 14px; opacity: 0.85; }
+  #endui button { background: rgba(120,230,200,0.15); border: 1px solid rgba(120,230,200,0.5); color: #dff; border-radius: 22px; padding: 9px 22px; font-size: 14px; cursor: pointer; letter-spacing: 0.08em; }
+  body.mapopen #card, body.mapopen #cap, body.mapopen #note { display: none; }
+  @media (max-width: 600px) { #cap { font-size: 12px; bottom: 170px; max-width: 86vw; } #card .vals { gap: 12px; font-size: 13px; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">
+  <h1 id="tTitle">NICHO</h1>
+  <div class="sub" id="tSub">una corriente de adaptación</div>
+  <div class="start" id="tStart">toca o haz clic para nadar</div>
+  <div class="hint" id="tHint"></div>
+  <button id="tNew" style="display:none">nuevo linaje</button>
+</div>
+<div id="ui">
+  <button id="bMap" title="mapa del nicho">◎</button>
+  <button id="bSnd" title="sonido">♪</button>
+  <button id="bLang">EN</button>
+  <button id="bInfo" title="fuentes">i</button>
+</div>
+<div id="note"></div>
+<div id="card"></div>
+<div id="cap"></div>
+<div id="endui"></div>
+<div id="info"><div id="infoBody"></div></div>
+<script src="js/data.js?v=1.0"></script>
+<script src="js/audio.js?v=1.0"></script>
+<script src="js/game.js?v=1.0"></script>
+</body>
+</html>
