@@ -10,6 +10,11 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 - GitHub Pages: sube la carpeta a un repo (p. ej. `fissotta/nicho`) y activa Pages en la rama `main`, carpeta raíz. Hay `.nojekyll`.
 - HTML + JavaScript puro, sin dependencias ni compilación. Funciona offline, en computador y en celular (táctil).
 
+## Novedades v1.4
+- Un poco más rápido (velocidad base +15 %).
+- **Turbo estilo slither.io**: mantén el clic (espacio en teclado, botón ⚡ en celular). Gasta mucha energía (ATP): cada ~1 s se consume un nódulo de gen, empezando por el color que menos tienes, y esa adaptación se revierte (el nicho vuelve un paso atrás). Sin nódulos, gasta biomasa y luego tamaño.
+- **Multicelulares gigantes y pacíficos** que pasan lentamente lejos (abajo, con su nombre) o muy cerca (arriba, desenfocados), según el ambiente: Volvox, rotíferos y pulgas de agua en la charca; nematodos en el Río Agrio; larvas de mosca de salmuera (Ephydridae) en las termas; peces en Vulcano y en el lago de soda (tilapias de Magadi); el caracol de pie escamoso (*Chrysomallon*) y camarones *Rimicaris* en Kairei; *Artemia* en el salar; tardígrados y nematodos en el permafrost. En la laguna del cráter (pH < 1, 46 °C) no pasa ninguno.
+
 ## Novedades v1.3
 - **Las bacterias son unicelulares**: ya no se agregan células. Tu bacteria es una sola célula que crece y se vuelve más compleja: se alarga y ensancha, gana doble membrana, ribosomas, un nucleoide (ADN plegado) que crece, gránulos de reserva (PHB, polifosfato), **nódulos de color de los genes que adquieres flotando adentro**, **plásmidos** (anillos de ADN con cada gen nuevo) y **vesículas de membrana** que brotan de la superficie. Cada división deja una hija: si trae una mutación, aparece como un brote junto a tu célula hasta que la selección decide si se impone (barrido) o se pierde.
 - **Cianobacteria (nuevo inicio, El Tatio)**: la única que es filamentosa, así que sí suma células al filamento, con heterocistos (fijan N₂) cada seis células, tilacoides, carboxisomas, vesículas de gas y vaina de mucílago. Hace fotosíntesis: la luz la alimenta de a poco. No tiene flagelos al inicio (se desliza).
@@ -26,7 +31,7 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 - **Hongos**: micelios con hifas que exudan carbono (rinde el doble) pero te enredan y te frenan; con 3 o más flagelos te enredas menos.
 
 ## Controles
-- Nadas hacia el cursor o el dedo. Clic / toque = impulso. Teclado: WASD o flechas, espacio = impulso.
+- Nadas hacia el cursor o el dedo. Mantener el clic = turbo (cuesta genes). Teclado: WASD o flechas, espacio = turbo. En celular, botón ⚡.
 - **N** (o el botón ◎): mapa del nicho. **M**: sonido. **ES/EN**: idioma. **i**: cómo se juega y fuentes.
 - Orbe rojo ▼: ambiente más extremo. Orbe azul ▲: volver a la capa anterior. Cuando no se ven, una insignia en el borde de la pantalla y dos flechitas alrededor de tu bacteria apuntan hacia ellos, con el destino, sus condiciones (T, pH, sal), la distancia en µm y un punto de color que anticipa cómo te iría al llegar (verde bien, amarillo estrés, rojo muy difícil).
 - El progreso se guarda solo (localStorage).
@@ -78,4 +83,4 @@ linaje y su trayectoria evolutiva.
 ## Fuentes
 Lista completa dentro del juego (botón **i**) y en `js/data.js` (`SOURCES`).
 
-Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.3 — octubre 2026.
+Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.4 — octubre 2026.
