@@ -10,6 +10,11 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 - GitHub Pages: sube la carpeta a un repo (p. ej. `fissotta/nicho`) y activa Pages en la rama `main`, carpeta raíz. Hay `.nojekyll`.
 - HTML + JavaScript puro, sin dependencias ni compilación. Funciona offline, en computador y en celular (táctil).
 
+## Novedades v1.3
+- **Las bacterias son unicelulares**: ya no se agregan células. Tu bacteria es una sola célula que crece y se vuelve más compleja: se alarga y ensancha, gana doble membrana, ribosomas, un nucleoide (ADN plegado) que crece, gránulos de reserva (PHB, polifosfato), **nódulos de color de los genes que adquieres flotando adentro**, **plásmidos** (anillos de ADN con cada gen nuevo) y **vesículas de membrana** que brotan de la superficie. Cada división deja una hija: si trae una mutación, aparece como un brote junto a tu célula hasta que la selección decide si se impone (barrido) o se pierde.
+- **Cianobacteria (nuevo inicio, El Tatio)**: la única que es filamentosa, así que sí suma células al filamento, con heterocistos (fijan N₂) cada seis células, tilacoides, carboxisomas, vesículas de gas y vaina de mucílago. Hace fotosíntesis: la luz la alimenta de a poco. No tiene flagelos al inicio (se desliza).
+- **Dos capas nuevas**: Géiseres de El Tatio (4.300 m, Chile; tapetes de cianobacterias hasta ~73 °C, el agua hierve a 86 °C) y la fuente hidrotermal somera de Isla Vulcano (Italia), hogar de la arquea hipertermófila *Pyrococcus furiosus* (óptimo 100 °C). Ahora son 10 mundos.
+
 ## Novedades v1.2
 - **Elige tu inicio**: neutrófilo (charca), acidófilo (Río Agrio, Copahue), termófilo (Yellowstone) o psicrófilo (salmuera del Ártico). Si no eliges en 30 s, elige el azar. Tu bacteria aparece de golpe en el rincón de esa capa que mejor le acomoda, y desde ahí navegas a los otros nichos (subir ▲ / bajar ▼).
 - **Genes por color**: rojas = calor, azules = frío, amarillas = ácido, violetas = alcalino, rosadas = sal, blancas = amplitud de nicho, verdes = defensa. El primer gen de cada tipo da un salto grande; cada bacteria más del mismo color corre tu nicho un poco más en esa dirección (tú eliges qué comer).
@@ -53,6 +58,8 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 7. Salmuera del Salar de Atacama — 20 °C, pH 7,5, 29 % sal (*Haloquadratum walsbyi*)
 8. Salmuera del permafrost, Ártico canadiense — −10 °C, 16 % sal (*Planococcus halocryophilus*, crece a −15 °C)
 
+En la v1.3 se agregaron, entre Yellowstone y Kairei: Géiseres de El Tatio (62 °C, pH 7; hasta 86 °C) y la fuente hidrotermal somera de Isla Vulcano (100 °C; *Pyrococcus furiosus*, Fiala & Stetter 1986).
+
 El mapa del nicho (N) ubica a 15 organismos reales en el plano temperatura × pH y en la banda de sal, junto a tu
 linaje y su trayectoria evolutiva.
 
@@ -71,4 +78,4 @@ linaje y su trayectoria evolutiva.
 ## Fuentes
 Lista completa dentro del juego (botón **i**) y en `js/data.js` (`SOURCES`).
 
-Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.2 — octubre 2026.
+Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.3 — octubre 2026.
