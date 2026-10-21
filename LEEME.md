@@ -10,6 +10,16 @@ ocho ambientes extremos reales. No hay "game over": la idea es mirar cómo un li
 - GitHub Pages: sube la carpeta a un repo (p. ej. `fissotta/nicho`) y activa Pages en la rama `main`, carpeta raíz. Hay `.nojekyll`.
 - HTML + JavaScript puro, sin dependencias ni compilación. Funciona offline, en computador y en celular (táctil).
 
+## Novedades v1.2
+- **Elige tu inicio**: neutrófilo (charca), acidófilo (Río Agrio, Copahue), termófilo (Yellowstone) o psicrófilo (salmuera del Ártico). Si no eliges en 30 s, elige el azar. Tu bacteria aparece de golpe en el rincón de esa capa que mejor le acomoda, y desde ahí navegas a los otros nichos (subir ▲ / bajar ▼).
+- **Genes por color**: rojas = calor, azules = frío, amarillas = ácido, violetas = alcalino, rosadas = sal, blancas = amplitud de nicho, verdes = defensa. El primer gen de cada tipo da un salto grande; cada bacteria más del mismo color corre tu nicho un poco más en esa dirección (tú eliges qué comer).
+- **Guía de color**: las curvas del nicho se tiñen según tu adaptación (rojo si eres termófilo, azul si psicrófilo…). Si te falta tolerancia, la curva se enciende con el color que necesitas y las bacterias de ese color brillan con un anillo. Los portales muestran qué colores te faltan para el nicho de destino.
+- **Forma (fenotipo), como en flOw**: células doradas entregan piezas: más flagelos (más rápido, flagelos laterales peritricos), pili tipo IV (la "boca" crece y atrae comida), capa S con ganchos tipo hami (los ciliados no te tragan, algunos fagos rebotan) y célula gigante tipo *Thiomargarita* (más grande, filamento más largo). La cabeza se va aguzando y el brillo crece.
+- **Más diversidad**: diplococos, bacilos, vibrios, espirilos, estreptococos, *Stella* (estrella), arqueas cuadradas (*Haloquadratum*) y lobuladas (*Sulfolobus*); virus libres con cola, filamentosos, icosaédricos y en forma de limón.
+- **Virus que se degradan**: si un fago no encuentra huésped o se aleja, su cápside se abre y se deshace (UV, proteasas).
+- **Oleadas**: de vez en cuando pasa con la corriente una comunidad entera de un mismo color (a menudo del que te falta).
+- **Hongos**: micelios con hifas que exudan carbono (rinde el doble) pero te enredan y te frenan; con 3 o más flagelos te enredas menos.
+
 ## Controles
 - Nadas hacia el cursor o el dedo. Clic / toque = impulso. Teclado: WASD o flechas, espacio = impulso.
 - **N** (o el botón ◎): mapa del nicho. **M**: sonido. **ES/EN**: idioma. **i**: cómo se juega y fuentes.
@@ -61,4 +71,4 @@ linaje y su trayectoria evolutiva.
 ## Fuentes
 Lista completa dentro del juego (botón **i**) y en `js/data.js` (`SOURCES`).
 
-Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.0 — octubre 2026.
+Microbial Ecophysiology Lab (Fundación Ciencia & Vida). Versión 1.2 — octubre 2026.

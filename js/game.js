@@ -18,7 +18,8 @@ const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v)
 const angDiff = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 const AX = ['T', 'pH', 'S'];
 const LIM = { T: { m: [-20, 125], s: [2.5, 30] }, pH: { m: [0, 13], s: [0.35, 3.5] }, S: { m: [0, 35], s: [0.8, 14] } };
-const R_WORLD = 1700, SPACING = 15, MAXSEG = 14;
+const R_WORLD = 1700, MAXSEG = 14;
+let SPACING = 15;
 
 // ---------- genoma y aptitud ----------
 function newGenome() { return { T: { m: 25, s: 9 }, pH: { m: 7, s: 1.5 }, S: { m: 0.5, s: 3 } }; }
@@ -77,7 +78,13 @@ const G = {
   portals: [], cam: { x: 0, y: 0, z: 1 }, ptr: null, keys: {}, envHist: [], trail: [],
   ev: null, nextEv: 40, seen: {}, stats: { sweeps: 0, purged: 0, genes: 0, desc: 0 },
   trans: null, phageT: 8, minW: 1, stressT: 0, deepest: 0, ended: false,
+  ph: { flag: 0, pili: 0, spike: 0, size: 0 }, doses: {}, vir: [], fungi: [], carb: [], nextWave: 60,
+  need: [], pulse: -9, spawnT: -9, trapped: false, visited: new Set(), start: 'neutro',
 };
+const maxSeg = () => MAXSEG + 2 * G.ph.size;
+const traitsOf = k => Object.keys(TRAITS).filter(t => TRAITS[t].kind === k && t !== 'litho');
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const evoLevel = () => G.ph.flag + G.ph.pili + G.ph.spike + G.ph.size;
 function resetPlayer(n, x, y) {
   G.segs = [];
   for (let i = 0; i < n; i++) G.segs.push({ x: x - i * SPACING, y: y, a: 0, g: G.g, mut: null, inf: 0, sw: 0, ng: null, born: G.t });
@@ -111,12 +118,20 @@ function enterLayer(n, fromBelow) {
   const a = rnd(0, Math.PI * 2);
   G.portals = [{ x: Math.cos(a) * 1050, y: Math.sin(a) * 1050, dir: 1 }];
   if (n > 0) G.portals.push({ x: Math.cos(a + Math.PI) * 900, y: Math.sin(a + Math.PI) * 900, dir: -1 });
-  const len = Math.max(3, Math.min(G.segs.length || 4, MAXSEG));
+  const len = Math.max(3, Math.min(G.segs.length || 4, maxSeg()));
   resetPlayer(len, 0, 0);
   G.cam.x = 0; G.cam.y = 0;
   for (let i = 0; i < 70; i++) spawnFood(true);
   for (let i = 0; i < 10; i++) spawnPrey();
   for (let i = 0; i < L.cil; i++) G.cils.push({ x: rnd(-1200, 1200), y: rnd(-1200, 1200), a: rnd(0, 6.3), full: 0, ph: rnd(0, 9) });
+  G.vir = []; G.carb = []; G.fungi = [];
+  for (let i = 0; i < (L.fungi || 0); i++) {
+    let fx, fy, ok, tries = 0;
+    do { const fa = rnd(0, 6.283), fr = rnd(450, 1100); fx = Math.cos(fa) * fr; fy = Math.sin(fa) * fr;
+      ok = G.portals.every(q => Math.hypot(q.x - fx, q.y - fy) > 500) && G.fungi.every(f => Math.hypot(f.x - fx, f.y - fy) > 600); } while (!ok && ++tries < 30);
+    G.fungi.push(makeFungus(fx, fy));
+  }
+  G.nextWave = G.t + rnd(45, 65); G.visited.add(n);
   G.envHist = []; G.grace = Math.max(G.grace, 15);
   Sound.setLayer(n);
   showCard();
@@ -148,11 +163,60 @@ function spawnFood(anywhere) {
   const litho = L.food === 'litho' && Math.random() < 0.6;
   G.food.push({ x, y, vx: rnd(-6, 6), vy: rnd(-6, 6), ph: rnd(0, 9), litho, s: rnd(0.7, 1.3), age: anywhere ? 9 : 0 });
 }
-function spawnPrey() {
+function pickTrait() {
   const L = LAYERS[G.layer];
-  const a = rnd(0, 6.283), r = rnd(380, 1350);
-  const tr = L.prey[Math.floor(Math.random() * L.prey.length)];
-  G.prey.push({ x: Math.cos(a) * r, y: Math.sin(a) * r, a: rnd(0, 6.3), tr, shape: Math.floor(Math.random() * 4), ph: rnd(0, 9), sp: rnd(28, 46) });
+  if (Math.random() < 0.55) return pick(L.prey);
+  return pick(Object.keys(TRAITS).filter(t => t !== 'litho' || L.food === 'litho'));
+}
+// presas: portadoras de genes (color = familia) o de rasgos de forma (doradas)
+function spawnPrey(o) {
+  o = o || {}; const L = LAYERS[G.layer];
+  let x = o.x, y = o.y;
+  if (x == null) { const a = rnd(0, 6.283), r = rnd(380, 1350); x = Math.cos(a) * r; y = Math.sin(a) * r; }
+  const body = o.body !== undefined ? o.body : null;
+  G.prey.push({ x, y, a: o.a != null ? o.a : rnd(0, 6.3), tr: body ? null : (o.tr || pickTrait()), body,
+    shape: pick(L.shapes || [0, 1, 2, 3]), ph: rnd(0, 9), sp: o.sp || rnd(28, 46), wave: !!o.wave, life: o.life || 0, age: 0 });
+}
+function makeFungus(x0, y0) {
+  const segs = [], tips = [], stack = [{ x: x0, y: y0, a: rnd(0, 6.283), d: 0 }];
+  for (let k = 0; k < 3; k++) stack.push({ x: x0, y: y0, a: k * 2.1 + rnd(0, 1), d: 0 });
+  let br = 0;
+  while (stack.length && segs.length < 260) {
+    const t = stack.pop(); let { x, y, a } = t;
+    const steps = Math.floor(rnd(5, 11));
+    for (let i = 0; i < steps; i++) { a += rnd(-0.22, 0.22); const nx = x + Math.cos(a) * 12, ny = y + Math.sin(a) * 12; segs.push([x, y, nx, ny]); x = nx; y = ny; }
+    if (t.d < 4) { const nb = Math.random() < 0.65 ? 2 : 1; for (let k = 0; k < nb; k++) stack.push({ x, y, a: a + rnd(-0.9, 0.9), d: t.d + 1 }); }
+    else tips.push({ x, y, a, ph: rnd(0, 6) });
+    br++;
+  }
+  let rad = 0; for (const q of segs) rad = Math.max(rad, Math.hypot(q[2] - x0, q[3] - y0));
+  return { x: x0, y: y0, segs, tips, rad };
+}
+function nearHypha(x, y, d) {
+  for (const f of G.fungi) {
+    if (Math.hypot(x - f.x, y - f.y) > f.rad + d) continue;
+    for (const q of f.segs) {
+      const vx = q[2] - q[0], vy = q[3] - q[1], k = clamp(((x - q[0]) * vx + (y - q[1]) * vy) / (vx * vx + vy * vy), 0, 1);
+      const dx = x - (q[0] + vx * k), dy = y - (q[1] + vy * k);
+      if (dx * dx + dy * dy < d * d) return f;
+    }
+  }
+  return null;
+}
+function startWave() {
+  const head = G.segs[0];
+  const kinds = ['heat', 'cold', 'acid', 'alk', 'salt', 'broad', 'shield'];
+  const k = G.need.length && Math.random() < 0.6 ? pick(G.need) : pick(kinds);
+  const list = traitsOf(k); if (!list.length) return;
+  const a = rnd(0, 6.283), dir = a + Math.PI, ox = head.x + Math.cos(a) * 760, oy = head.y + Math.sin(a) * 760;
+  const n = Math.floor(rnd(14, 21));
+  for (let i = 0; i < n; i++) {
+    const pr = rnd(-200, 200), al = rnd(-160, 160);
+    spawnPrey({ x: ox + Math.cos(dir + 1.57) * pr + Math.cos(dir) * al, y: oy + Math.sin(dir + 1.57) * pr + Math.sin(dir) * al, a: dir, tr: pick(list), wave: true, life: 38, sp: rnd(52, 62) });
+  }
+  if (Math.random() < 0.6) spawnPrey({ x: ox, y: oy, a: dir, body: pick(Object.keys(PHENO)), wave: true, life: 38, sp: 56 });
+  note(`〰 ${T_().waveNote} · <b style="color:${KINDS[k].col}">${KINDS[k][lang]}</b>`); cap('wave');
+  G.nextWave = G.t + rnd(70, 110);
 }
 function burst(x, y, col, n, sp, life) {
   for (let i = 0; i < n; i++) { const a = rnd(0, 6.283), v = rnd(sp * 0.3, sp); G.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: life || 1, max: life || 1, col, r: rnd(1, 2.6) }); }
@@ -180,7 +244,7 @@ function divide() {
   const stressed = G.w < 0.35;
   Sound.divide();
   let seg;
-  if (G.segs.length < MAXSEG) {
+  if (G.segs.length < maxSeg()) {
     const t = G.segs[G.segs.length - 1];
     seg = { x: t.x - Math.cos(t.a) * SPACING, y: t.y - Math.sin(t.a) * SPACING, a: t.a, g: G.g, mut: null, inf: 0, sw: 0, ng: null, born: G.t };
     G.segs.push(seg);
@@ -224,7 +288,8 @@ function sweep(ng, from) {
 }
 function gainTrait(tr, x, y) {
   const T = TRAITS[tr]; Sound.gene(); burst(x, y, hexRgb(T.col), 22, 90, 1.4);
-  if (G.traits.has(tr)) { G.biomass += 0.6; return; }
+  const kind = T.kind; G.doses[kind] = (G.doses[kind] || 0) + 1;
+  if (G.traits.has(tr)) { if (!applyDose(kind)) G.biomass += 0.6; else cap('dose'); return; }
   G.traits.add(tr); G.stats.genes++;
   const g = cloneG(G.g), d = T.d;
   if (d.Tm) g.T.m += d.Tm; if (d.Ts) g.T.s += d.Ts; if (d.pHm) g.pH.m += d.pHm; if (d.pHs) g.pH.s += d.pHs; if (d.Sm) g.S.m += d.Sm; if (d.Ss) g.S.s += d.Ss;
@@ -232,6 +297,22 @@ function gainTrait(tr, x, y) {
   cap('hgt');
   const tx = T[lang]; cap(null, `<b style="color:${T.col}">${tx[0]}</b> — ${tx[1]}`);
   G.biomass += 0.5;
+}
+// dosis: cada célula de un color empuja tu nicho un poco más en esa dirección
+function applyDose(kind) {
+  const d = KINDS[kind].dose; if (!d) return false;
+  const g = cloneG(G.g);
+  if (d === 'broad') { let worst = 'T', wp = 2; for (const a of AX) { const p = perf(a, G.env[a], G.g, G.off); if (p < wp) { wp = p; worst = a; } } g[worst].s *= 1.1; }
+  else { if (d.Tm) g.T.m += d.Tm; if (d.pHm) g.pH.m += d.pHm; if (d.Sm) g.S.m += d.Sm; }
+  clampG(g); sweep(g, 0); G.stats.sweeps--; G.biomass += 0.3; return true;
+}
+function gainPheno(k, x, y) {
+  const P = PHENO[k]; Sound.gene(); burst(x, y, [255, 214, 110], 30, 110, 1.6);
+  if (G.ph[k] >= P.max) { G.biomass += 0.8; return; }
+  G.ph[k]++; G.stats.genes++; G.pulse = G.t;
+  if (k === 'size') SPACING = 15 * (1 + 0.1 * G.ph.size);
+  cap('pheno'); cap(null, `<b style="color:#ffd166">${P[lang][0]}</b> — ${P[lang][1]}`);
+  save();
 }
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function loseSeg(idx, col) {
@@ -277,14 +358,15 @@ function toWorld(px, py) { return { x: G.cam.x + (px - W / 2) / G.cam.z, y: G.ca
 cv.addEventListener('pointermove', e => { G.ptr = { x: e.clientX, y: e.clientY }; });
 cv.addEventListener('pointerdown', e => {
   G.ptr = { x: e.clientX, y: e.clientY };
-  if (G.mode === 'title') { startGame(); return; }
+  if (G.mode === 'title') { onTitle(); return; }
   if (G.mode === 'map') { closeMap(); return; }
   if (G.mode === 'play' && G.dashCd <= 0) { G.dash = 0.7; G.dashCd = 1.4; }
 });
 cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') G.ptr = null; });
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); G.keys[k] = true;
-  if (G.mode === 'title' && (k === ' ' || k === 'enter')) { startGame(); return; }
+  if (G.mode === 'title' && (k === ' ' || k === 'enter')) { onTitle(); return; }
+  if (G.mode === 'choose' && '1234'.includes(k)) { chooseStart(Object.keys(STARTS)[+k - 1]); return; }
   if (k === 'n' || k === 'tab') { e.preventDefault(); if (G.mode === 'play') openMap(false); else if (G.mode === 'map') closeMap(); }
   if (k === 'escape' && G.mode === 'map') closeMap();
   if (k === 'm') toggleSound();
@@ -299,7 +381,7 @@ function update(dt) {
   G.t += dt;
   if (G.mode === 'map' || G.mode === 'end') return;
   if (G.mode === 'trans') updTrans();
-  const auto = G.mode === 'title';
+  const auto = G.mode === 'title' || G.mode === 'choose';
   const head = G.segs[0];
   const L = LAYERS[G.layer];
 
@@ -314,6 +396,16 @@ function update(dt) {
     if (!auto && Math.abs(G.off[a]) > AXES[a].accl * 0.7) cap('accl');
   }
   G.w = fitness(G.g, e, G.off);
+  // qué familia de genes te ayudaría aquí (guía de color)
+  G.need = [];
+  for (const a of AX) {
+    if (perf(a, e[a], G.g, G.off) > 0.6) continue;
+    const d = e[a] - (G.g[a].m + G.off[a]);
+    G.need.push(a === 'T' ? (d > 0 ? 'heat' : 'cold') : a === 'pH' ? (d < 0 ? 'acid' : 'alk') : (d > 0 ? 'salt' : 'broad'));
+  }
+  if (!auto && G.mode === 'play' && G.stressT > 3) for (const k of G.need) {
+    const K = KINDS[k]; cap('need_' + k, T_().cap.need.replace('{k}', K[lang]).replace('{c}', K.col).replace('{n}', K.cn[lang]));
+  }
   if (!auto && G.mode === 'play') {
     G.minW = Math.min(G.minW, G.w);
     // estrés
@@ -339,6 +431,7 @@ function update(dt) {
       cap('event'); G.minW = Math.min(G.minW, 1);
     }
     if (G.ev && G.t - G.ev.t0 > 68) { G.ev = null; G.nextEv = G.t + rnd(55, 85); }
+    if (G.t > G.nextWave) startWave();
   }
 
   // movimiento de la cabeza
@@ -356,7 +449,9 @@ function update(dt) {
   if (rr > R_WORLD) want = head.a + angDiff(head.a, Math.atan2(-head.y, -head.x)) * 0.5;
   head.a += angDiff(head.a, want) * Math.min(1, dt * (4.5 + 5 * (1 - sstep(0, 120, dist))));
   G.dash = Math.max(0, G.dash - dt); G.dashCd -= dt;
-  let sp = (95 + Math.min(G.segs.length, 12) * 4) * (0.45 + 0.55 * clamp(G.w, 0, 1));
+  let sp = (95 + Math.min(G.segs.length, 12) * 4) * (0.45 + 0.55 * clamp(G.w, 0, 1)) * (1 + 0.14 * G.ph.flag);
+  G.trapped = !auto && !!nearHypha(head.x, head.y, 11 + 2 * G.ph.size);
+  if (G.trapped) { sp *= G.ph.flag >= 3 ? 0.7 : 0.4; cap('fungi'); }
   if (G.dash > 0) sp *= 1 + 1.4 * (G.dash / 0.7);
   sp *= sstep(0, 70, dist) * 0.85 + 0.15;
   if (G.mode === 'dorm') sp = 30;
@@ -373,9 +468,21 @@ function update(dt) {
 
   // comer
   if (!auto && G.mode === 'play') {
+    const er = 18 + 7 * G.ph.pili, mag = G.ph.pili ? 40 + 28 * G.ph.pili : 0;
+    for (const arr of [G.food, G.carb]) if (mag) for (const f of arr) {
+      const dx = head.x - f.x, dy = head.y - f.y, d = Math.hypot(dx, dy);
+      if (d < mag && d > 1) { const v = (60 + 20 * G.ph.pili) * dt / d; f.x += dx * v; f.y += dy * v; }
+    }
+    for (let i = G.carb.length - 1; i >= 0; i--) {
+      const f = G.carb[i];
+      if ((f.x - head.x) ** 2 + (f.y - head.y) ** 2 < er * er) {
+        G.biomass += 0.26 * 2.2 * (0.35 + 0.65 * clamp(G.w, 0, 1)); Sound.eat(); burst(f.x, f.y, [255, 200, 120], 6, 35, 0.7);
+        G.carb.splice(i, 1); cap('carbon');
+      }
+    }
     for (let i = G.food.length - 1; i >= 0; i--) {
       const f = G.food[i];
-      if ((f.x - head.x) ** 2 + (f.y - head.y) ** 2 < 18 * 18) {
+      if ((f.x - head.x) ** 2 + (f.y - head.y) ** 2 < er * er) {
         let gain = 0.26 * (0.35 + 0.65 * clamp(G.w, 0, 1));
         if (f.litho) gain *= G.traits.has('litho') ? 2 : 0.6;
         G.biomass += gain; Sound.eat(); burst(f.x, f.y, f.litho ? [255, 170, 70] : [200, 255, 220], 5, 30, 0.6);
@@ -385,7 +492,11 @@ function update(dt) {
     }
     for (let i = G.prey.length - 1; i >= 0; i--) {
       const p = G.prey[i];
-      if ((p.x - head.x) ** 2 + (p.y - head.y) ** 2 < 20 * 20) { G.prey.splice(i, 1); gainTrait(p.tr, p.x, p.y); }
+      if ((p.x - head.x) ** 2 + (p.y - head.y) ** 2 < (er + 3) ** 2) {
+        G.prey.splice(i, 1);
+        if (p.body) gainPheno(p.body, p.x, p.y); else gainTrait(p.tr, p.x, p.y);
+        if (p.shape === 4 || p.shape === 5) cap('archaea');
+      }
     }
     while (G.biomass >= 1) { G.biomass -= 1; divide(); }
     resolveMutants();
@@ -406,21 +517,45 @@ function updWorld(dt, auto) {
   for (let i = G.food.length - 1; i >= 0; i--) if ((G.food[i].x - head.x) ** 2 + (G.food[i].y - head.y) ** 2 > 1500 * 1500) G.food.splice(i, 1);
   while (G.food.length < 85) spawnFood(false);
   // presas
+  for (let i = G.prey.length - 1; i >= 0; i--) {
+    const p = G.prey[i]; p.age += dt;
+    if (p.wave) { p.life -= dt; if (p.life <= 0) { G.prey.splice(i, 1); continue; } }
+  }
   for (const p of G.prey) {
-    p.ph += dt; p.a += Math.sin(p.ph * 0.7) * dt * 0.8;
+    p.ph += dt; p.a += Math.sin(p.ph * 0.7) * dt * (p.wave ? 0.15 : 0.8);
     const d = Math.hypot(p.x - head.x, p.y - head.y);
     let sp = p.sp;
     if (!auto && d < 170 && G.segs.length >= 2) { p.a += angDiff(p.a, Math.atan2(p.y - head.y, p.x - head.x)) * dt * 3; sp *= 1.6; }
     if (Math.hypot(p.x, p.y) > R_WORLD - 100) p.a += angDiff(p.a, Math.atan2(-p.y, -p.x)) * dt * 2;
     p.x += Math.cos(p.a) * sp * dt; p.y += Math.sin(p.a) * sp * dt;
   }
-  while (G.prey.length < 10) spawnPrey();
+  let nNorm = 0, nBody = 0; for (const p of G.prey) if (!p.wave) { nNorm++; if (p.body) nBody++; }
+  if (nBody < 2) spawnPrey({ body: pick(Object.keys(PHENO)) });
+  else if (nNorm < 12) spawnPrey();
+  // carbono que exudan las hifas
+  for (const f of G.fungi) {
+    if (G.carb.filter(c => c.f === f).length < 16 && Math.random() < dt * 1.2) {
+      const q = pick(f.segs); G.carb.push({ x: (q[0] + q[2]) / 2 + rnd(-7, 7), y: (q[1] + q[3]) / 2 + rnd(-7, 7), ph: rnd(0, 9), age: 0, f });
+    }
+  }
+  for (const c of G.carb) { c.ph += dt; c.age += dt; }
+  for (const f of G.fungi) for (const tp of f.tips) tp.ph += dt;
+  // virus libres que derivan y se degradan
+  if (G.vir.length < 6 && Math.random() < dt * 0.5) {
+    const a = rnd(0, 6.283), r = rnd(250, 700);
+    G.vir.push({ x: head.x + Math.cos(a) * r, y: head.y + Math.sin(a) * r, a: rnd(0, 6.3), life: rnd(14, 30), ph: rnd(0, 9), decay: 0, kind: pick(['tail', 'fil', 'ico', LAYERS[G.layer].phage]) });
+  }
+  for (let i = G.vir.length - 1; i >= 0; i--) {
+    const v = G.vir[i]; v.ph += dt; v.a += dt * 0.2; v.x += Math.cos(v.ph * 0.3) * 6 * dt; v.y += Math.sin(v.ph * 0.25) * 6 * dt;
+    v.life -= dt; if (v.life <= 0) { v.decay += dt; if (v.decay > 0.1 && v.decay < 0.2 && onScreen(v.x, v.y)) cap('vdecay'); }
+    if (v.decay > 2.6 || Math.hypot(v.x - head.x, v.y - head.y) > 1600) G.vir.splice(i, 1);
+  }
   // ciliados (pastoreo)
   for (const c of G.cils) {
     c.ph += dt; c.full = Math.max(0, c.full - dt);
     const tail = G.segs[G.segs.length - 1];
     const d = Math.hypot(tail.x - c.x, tail.y - c.y);
-    const small = G.segs.length < 6 && !G.traits.has('capsule');
+    const small = G.segs.length < 6 && !G.traits.has('capsule') && !G.ph.spike && G.ph.size < 2;
     let sp = 40;
     if (!auto && G.mode === 'play' && d < 400 && c.full <= 0 && G.segs.length > 1) {
       if (small) { c.a += angDiff(c.a, Math.atan2(tail.y - c.y, tail.x - c.x)) * dt * 2; sp = 82; }
@@ -437,12 +572,14 @@ function updWorld(dt, auto) {
       G.phageT -= dt;
       if (G.phageT <= 0 && G.phages.length < 5) {
         G.phageT = clamp(16 - abund * 0.6, 4, 14);
-        const a = rnd(0, 6.283); G.phages.push({ x: head.x + Math.cos(a) * 650, y: head.y + Math.sin(a) * 650, life: 30, ph: rnd(0, 9), a: 0 });
+        const a = rnd(0, 6.283); G.phages.push({ x: head.x + Math.cos(a) * 650, y: head.y + Math.sin(a) * 650, life: 30, ph: rnd(0, 9), a: 0, decay: 0 });
       }
     }
   }
   for (let i = G.phages.length - 1; i >= 0; i--) {
     const v = G.phages[i]; v.life -= dt; v.ph += dt;
+    if (v.decay) { v.decay += dt; v.x += Math.cos(v.ph) * 6 * dt; v.y += Math.sin(v.ph) * 6 * dt; if (v.decay > 2.6) G.phages.splice(i, 1); continue; }
+    if (v.life <= 0 || Math.hypot(v.x - head.x, v.y - head.y) > 950) { v.decay = 0.001; if (onScreen(v.x, v.y)) cap('vdecay'); continue; }
     let best = null, bd = 1e9;
     for (let j = 1; j < G.segs.length; j++) { const s = G.segs[j]; const d = (s.x - v.x) ** 2 + (s.y - v.y) ** 2; if (d < bd && !s.inf) { bd = d; best = s; } }
     if (best && v.life > 0) {
@@ -451,18 +588,18 @@ function updWorld(dt, auto) {
       if (bd < 13 * 13) {
         G.phages.splice(i, 1);
         if (G.traits.has('crispr')) { burst(v.x, v.y, [80, 255, 210], 16, 70, 0.9); Sound.gene(); cap('crispr'); }
+        else if (G.ph.spike && Math.random() < 0.22 * G.ph.spike) { burst(v.x, v.y, [255, 230, 160], 10, 60, 0.8); cap('slayer'); }
         else { best.inf = G.t; cap('phage'); }
         continue;
       }
     } else { v.x += Math.cos(v.ph) * 10 * dt; v.y += Math.sin(v.ph) * 10 * dt; }
-    if (v.life < -2) G.phages.splice(i, 1);
   }
   for (let j = G.segs.length - 1; j >= 1; j--) {
     const s = G.segs[j];
     if (s.inf && G.t - s.inf > 3.5) {
       const x = s.x, y = s.y;
       loseSeg(j, [120, 255, 200]);
-      for (let k = 0; k < 1 && G.phages.length < 7; k++) G.phages.push({ x: x + rnd(-8, 8), y: y + rnd(-8, 8), life: 5, ph: rnd(0, 9), a: 0 });
+      for (let k = 0; k < 1 && G.phages.length < 7; k++) G.phages.push({ x: x + rnd(-8, 8), y: y + rnd(-8, 8), life: 5, ph: rnd(0, 9), a: 0, decay: 0 });
     }
   }
   // hijas
@@ -471,7 +608,7 @@ function updWorld(dt, auto) {
   for (let i = G.parts.length - 1; i >= 0; i--) { const p = G.parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; if (p.life <= 0) G.parts.splice(i, 1); }
   updAmbient(dt);
   // cámara
-  const zt = Math.min(W, H) / 820 * (1 - Math.min(G.segs.length, 14) * 0.012);
+  const zt = Math.min(W, H) / 820 * (1 - Math.min(G.segs.length, 18) * 0.011) / (1 + 0.06 * G.ph.size);
   G.cam.x += (head.x - G.cam.x) * Math.min(1, dt * 2.2); G.cam.y += (head.y - G.cam.y) * Math.min(1, dt * 2.2);
   let z = zt;
   if (G.trans) { const k = G.t - G.trans.t0; z = k < 1.6 ? zt * (1 + sstep(0, 1.6, k) * 2.5) : zt * (0.35 + 0.65 * sstep(1.6, 3.2, k)); }
@@ -538,6 +675,7 @@ function capsule(x, y, a, len, rad) {
   cx.moveTo(-len / 2, -rad); cx.lineTo(len / 2, -rad); cx.arc(len / 2, 0, rad, -Math.PI / 2, Math.PI / 2);
   cx.lineTo(-len / 2, rad); cx.arc(-len / 2, 0, rad, Math.PI / 2, Math.PI * 1.5); cx.closePath(); cx.restore();
 }
+function onScreen(x, y) { const sx = (x - G.cam.x) * G.cam.z + W / 2, sy = (y - G.cam.y) * G.cam.z + H / 2; return sx > 0 && sx < W && sy > 0 && sy < H; }
 function worldT() { const z = G.cam.z * DPR; cx.setTransform(z, 0, 0, z, (W / 2 - G.cam.x * G.cam.z) * DPR, (H / 2 - G.cam.y * G.cam.z) * DPR); }
 
 function drawWorld() {
@@ -571,6 +709,8 @@ function drawWorld() {
     cx.fillStyle = rgb(envColor(LAYERS[nl].core).map(v => Math.min(255, v * 3)), 0.9); cx.beginPath(); cx.arc(p.x, p.y, 9, 0, 6.283); cx.fill();
   }
   cx.globalCompositeOperation = 'source-over';
+  drawFungi();
+  for (const v of G.vir) drawPhage(v, v.kind);
   // presas (portadoras de genes)
   for (const p of G.prey) drawPrey(p);
   // ciliados
@@ -579,25 +719,77 @@ function drawWorld() {
   for (const d of G.daughters) { const al = Math.min(1, d.life / 3) * 0.7; cx.globalAlpha = al; const col = gColor(d.g); glow(d.x, d.y, 22, col, 0.3); capsule(d.x, d.y, d.a, 10, 5); cx.fillStyle = rgb(col, 0.8); cx.fill(); cx.globalAlpha = 1; }
   drawPlayer();
   // fagos
-  for (const v of G.phages) drawPhage(v);
+  for (const v of G.phages) drawPhage(v, null);
   // partículas
   cx.globalCompositeOperation = 'lighter';
   for (const p of G.parts) { cx.fillStyle = rgb(p.col, p.life / p.max * 0.9); cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.283); cx.fill(); }
   cx.globalCompositeOperation = 'source-over';
 }
 function drawPrey(p) {
+  const t = G.t, fade = p.wave ? Math.min(1, p.life / 3, p.age) : Math.min(1, p.age + 0.3);
+  cx.globalAlpha = fade;
+  if (p.body) { drawBodyPrey(p); cx.globalAlpha = 1; return; }
   const T = TRAITS[p.tr], c = hexRgb(T.col);
-  cx.globalCompositeOperation = 'lighter'; glow(p.x, p.y, 26, c, 0.28); cx.globalCompositeOperation = 'source-over';
+  const needed = G.need.includes(T.kind);
+  cx.globalCompositeOperation = 'lighter'; glow(p.x, p.y, needed ? 34 : 26, c, needed ? 0.4 : 0.28); cx.globalCompositeOperation = 'source-over';
+  if (needed) { cx.strokeStyle = rgb(c, 0.35 + 0.3 * Math.sin(t * 4 + p.ph)); cx.lineWidth = 1.2; cx.beginPath(); cx.arc(p.x, p.y, 17 + 2 * Math.sin(t * 4 + p.ph), 0, 6.283); cx.stroke(); }
   cx.fillStyle = rgb(c, 0.75); cx.strokeStyle = rgb(c, 1); cx.lineWidth = 1.2;
-  if (p.shape === 0) { cx.beginPath(); cx.arc(p.x, p.y, 5.5, 0, 6.283); cx.fill(); cx.beginPath(); cx.arc(p.x + 8, p.y + 2, 4.5, 0, 6.283); cx.fill(); }
-  else if (p.shape === 1) { capsule(p.x, p.y, p.a, 12, 4.5); cx.fill(); }
-  else if (p.shape === 2) { cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.lineWidth = 5; cx.lineCap = 'round'; cx.strokeStyle = rgb(c, 0.8); cx.beginPath(); cx.arc(0, 8, 10, -Math.PI * 0.75, -Math.PI * 0.25); cx.stroke(); cx.restore(); }
-  else { cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.lineWidth = 3; cx.lineCap = 'round'; cx.strokeStyle = rgb(c, 0.85); cx.beginPath(); for (let i = -12; i <= 12; i += 2) cx.lineTo(i, Math.sin(i * 0.5 + p.ph * 6) * 3); cx.stroke(); cx.restore(); }
+  cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a);
+  switch (p.shape) {
+    case 0: cx.beginPath(); cx.arc(-4, 0, 5, 0, 6.283); cx.fill(); cx.beginPath(); cx.arc(5, 0, 4.5, 0, 6.283); cx.fill(); break; // diplococo
+    case 1: cx.restore(); capsule(p.x, p.y, p.a, 12, 4.5); cx.fill(); cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); break; // bacilo
+    case 2: cx.lineWidth = 5; cx.lineCap = 'round'; cx.strokeStyle = rgb(c, 0.8); cx.beginPath(); cx.arc(0, 8, 10, -Math.PI * 0.75, -Math.PI * 0.25); cx.stroke(); break; // vibrio
+    case 3: cx.lineWidth = 3; cx.lineCap = 'round'; cx.strokeStyle = rgb(c, 0.85); cx.beginPath(); for (let i = -12; i <= 12; i += 2) cx.lineTo(i, Math.sin(i * 0.5 + p.ph * 6) * 3); cx.stroke(); break; // espirilo
+    case 4: cx.rotate(Math.sin(p.ph * 0.5) * 0.2); cx.fillRect(-7, -7, 14, 14); cx.strokeRect(-7, -7, 14, 14); cx.fillStyle = 'rgba(255,255,255,0.35)'; for (let k = 0; k < 3; k++) cx.fillRect(-5 + k * 4, -4 + (k % 2) * 4, 2, 2); break; // arquea cuadrada (Haloquadratum)
+    case 5: cx.beginPath(); for (let k = 0; k <= 24; k++) { const q = k / 24 * 6.283, r = 6.5 + 1.4 * Math.sin(q * 5 + p.ph); cx.lineTo(Math.cos(q) * r, Math.sin(q) * r); } cx.fill(); cx.stroke(); break; // coco lobulado (Sulfolobus)
+    case 6: cx.beginPath(); for (let k = 0; k < 12; k++) { const q = k / 12 * 6.283, r = k % 2 ? 3 : 8; cx.lineTo(Math.cos(q) * r, Math.sin(q) * r); } cx.closePath(); cx.fill(); break; // Stella (estrella)
+    default: for (let k = -2; k <= 2; k++) { cx.beginPath(); cx.arc(k * 6, Math.sin(p.ph * 3 + k) * 1.5, 3, 0, 6.283); cx.fill(); } // cadena (estreptococo)
+  }
+  cx.restore();
   // flagelo
   cx.strokeStyle = rgb(c, 0.4); cx.lineWidth = 0.8; cx.beginPath();
   for (let i = 0; i < 10; i++) { const d = 8 + i * 2; cx.lineTo(p.x - Math.cos(p.a) * d + Math.cos(p.a + 1.57) * Math.sin(p.ph * 12 - i) * 2, p.y - Math.sin(p.a) * d + Math.sin(p.a + 1.57) * Math.sin(p.ph * 12 - i) * 2); }
-  cx.stroke();
+  cx.stroke(); cx.globalAlpha = 1;
 }
+// presas doradas: cada una muestra la pieza de forma que entrega
+function drawBodyPrey(p) {
+  const t = G.t, c = [255, 210, 100];
+  cx.globalCompositeOperation = 'lighter'; glow(p.x, p.y, 38, c, 0.32 + 0.1 * Math.sin(t * 3 + p.ph)); cx.globalCompositeOperation = 'source-over';
+  cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a);
+  cx.fillStyle = 'rgba(255,214,110,0.85)'; cx.strokeStyle = 'rgba(255,240,190,1)'; cx.lineWidth = 1.2;
+  if (p.body === 'size') { cx.restore(); capsule(p.x, p.y, p.a, 20, 8); cx.fill(); cx.stroke(); cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.fillStyle = 'rgba(255,255,255,0.4)'; for (let k = 0; k < 5; k++) { cx.beginPath(); cx.arc(-8 + k * 4, Math.sin(k * 2) * 3, 1.6, 0, 6.283); cx.fill(); } }
+  else if (p.body === 'spike') { cx.beginPath(); cx.arc(0, 0, 6, 0, 6.283); cx.fill(); cx.stroke(); cx.beginPath(); for (let k = 0; k < 10; k++) { const q = k / 10 * 6.283 + t * 0.4; cx.moveTo(Math.cos(q) * 6, Math.sin(q) * 6); cx.lineTo(Math.cos(q) * 12, Math.sin(q) * 12); cx.arc(Math.cos(q) * 12 + Math.cos(q + 1.57) * 1.5, Math.sin(q) * 12 + Math.sin(q + 1.57) * 1.5, 1.5, q + 3.14, q + 6.28); } cx.stroke(); }
+  else if (p.body === 'pili') { cx.beginPath(); cx.arc(0, 0, 6, 0, 6.283); cx.fill(); cx.beginPath(); for (let k = 0; k < 16; k++) { const q = k / 16 * 6.283; const l = 12 + 2 * Math.sin(t * 5 + k); cx.moveTo(Math.cos(q) * 6, Math.sin(q) * 6); cx.lineTo(Math.cos(q) * l, Math.sin(q) * l); } cx.lineWidth = 0.8; cx.stroke(); }
+  else { cx.restore(); capsule(p.x, p.y, p.a, 12, 4.5); cx.fill(); cx.stroke(); cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.lineWidth = 0.9; for (let f = -1; f <= 1; f++) { cx.beginPath(); for (let i = 0; i < 12; i++) { const d = 7 + i * 2.2; cx.lineTo(-d, f * (3 + i * 0.6) + Math.sin(t * 13 - i + f) * 1.8); } cx.stroke(); } }
+  cx.restore();
+  // destello
+  const sp = 0.5 + 0.5 * Math.sin(t * 2.5 + p.ph);
+  cx.strokeStyle = `rgba(255,250,220,${0.6 * sp})`; cx.lineWidth = 1; cx.beginPath();
+  cx.moveTo(p.x - 16, p.y - 14); cx.lineTo(p.x - 10, p.y - 14); cx.moveTo(p.x - 13, p.y - 17); cx.lineTo(p.x - 13, p.y - 11); cx.stroke();
+}
+function drawFungi() {
+  const t = G.t;
+  for (const f of G.fungi) {
+    if (!onScreen(f.x, f.y) && Math.hypot(f.x - G.cam.x, f.y - G.cam.y) > f.rad + W / G.cam.z) continue;
+    cx.strokeStyle = 'rgba(236,226,200,0.32)'; cx.lineWidth = 2.4; cx.lineCap = 'round'; cx.beginPath();
+    for (const q of f.segs) { cx.moveTo(q[0], q[1]); cx.lineTo(q[2], q[3]); } cx.stroke();
+    cx.strokeStyle = 'rgba(255,248,225,0.18)'; cx.lineWidth = 5; cx.stroke();
+    cx.fillStyle = 'rgba(255,245,220,0.4)'; // septos
+    for (let i = 0; i < f.segs.length; i += 3) { const q = f.segs[i]; cx.beginPath(); cx.arc(q[2], q[3], 1.3, 0, 6.283); cx.fill(); }
+    for (const tp of f.tips) { // ápices que crecen y conidios
+      const k = 0.5 + 0.5 * Math.sin(tp.ph * 1.5);
+      cx.fillStyle = `rgba(255,250,230,${0.4 + 0.4 * k})`; cx.beginPath(); cx.arc(tp.x, tp.y, 2.2 + k, 0, 6.283); cx.fill();
+      cx.fillStyle = 'rgba(210,230,190,0.35)';
+      for (let j = 1; j <= 3; j++) { cx.beginPath(); cx.arc(tp.x + Math.cos(tp.a) * j * 5, tp.y + Math.sin(tp.a) * j * 5, 2.2, 0, 6.283); cx.fill(); }
+    }
+    cx.lineCap = 'butt';
+  }
+  if (G.trapped) { const h = G.segs[0]; cx.strokeStyle = 'rgba(255,245,215,0.6)'; cx.lineWidth = 1; cx.beginPath(); for (let k = 0; k < 5; k++) { const q = k * 1.26 + t; cx.moveTo(h.x + Math.cos(q) * 6, h.y + Math.sin(q) * 6); cx.quadraticCurveTo(h.x + Math.cos(q + 0.6) * 18, h.y + Math.sin(q + 0.6) * 18, h.x + Math.cos(q + 1.1) * 26, h.y + Math.sin(q + 1.1) * 26); } cx.stroke(); }
+  cx.globalCompositeOperation = 'lighter';
+  for (const c of G.carb) { const p = (0.7 + 0.3 * Math.sin(c.ph * 2)) * Math.min(1, c.age); glow(c.x, c.y, 10, [255, 190, 90], 0.4 * p); cx.fillStyle = `rgba(255,220,150,${0.9 * Math.min(1, c.age)})`; cx.beginPath(); cx.arc(c.x, c.y, 2.4, 0, 6.283); cx.fill(); }
+  cx.globalCompositeOperation = 'source-over';
+}
+
 function drawCiliate(c) {
   cx.save(); cx.translate(c.x, c.y); cx.rotate(c.a);
   cx.globalCompositeOperation = 'lighter'; glow(0, 0, 60, [170, 210, 230], 0.12); cx.globalCompositeOperation = 'source-over';
@@ -614,56 +806,91 @@ function drawCiliate(c) {
   for (let i = 0; i < 4; i++) { cx.beginPath(); cx.arc(-18 + i * 7, -8 + (i % 2) * 14, 2.5, 0, 6.283); cx.fill(); }
   cx.restore();
 }
-function drawPhage(v) {
-  const al = clamp(v.life + 2, 0, 1);
+function drawPhage(v, kind) {
+  kind = kind || v.kind || LAYERS[G.layer].phage;
+  const dec = v.decay ? clamp(v.decay / 2.6, 0, 1) : 0;
+  const al = (1 - dec) * (v.kind ? 0.55 : 1);
   cx.save(); cx.translate(v.x, v.y); cx.rotate(v.a - Math.PI / 2); cx.globalAlpha = al;
   cx.strokeStyle = 'rgba(160,255,215,0.9)'; cx.fillStyle = 'rgba(120,255,200,0.25)'; cx.lineWidth = 1;
-  if (LAYERS[G.layer].phage === 'lemon') { // virus en forma de limón (tipo SSV1 de Sulfolobus)
-    cx.beginPath(); cx.ellipse(0, 0, 4, 7, 0, 0, 6.283); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(0, 7); cx.lineTo(0, 11); cx.moveTo(-2, 11); cx.lineTo(2, 11); cx.stroke();
+  const sp = dec * 9; // al degradarse la cápside se abre y la cola se separa
+  if (kind === 'lemon') { // virus en forma de limón (tipo SSV1 de Sulfolobus)
+    cx.beginPath(); cx.ellipse(-sp * 0.5, 0, 4, 7, -dec, 0, 6.283); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(sp, 7 + sp); cx.lineTo(sp, 11 + sp); cx.moveTo(sp - 2, 11 + sp); cx.lineTo(sp + 2, 11 + sp); cx.stroke();
+  } else if (kind === 'fil') { // filamentoso (Inoviridae)
+    cx.beginPath(); for (let i = -14; i <= 14; i += 2) cx.lineTo(Math.sin(i * 0.3 + G.t) * 2 + (i > 0 ? sp : -sp), i); cx.stroke();
+  } else if (kind === 'ico') { // icosaédrico sin cola
+    cx.beginPath(); for (let i = 0; i < 6; i++) { const q = i / 6 * 6.283; cx.lineTo(Math.cos(q) * 5 + Math.cos(q) * sp * 0.5, Math.sin(q) * 5 + Math.sin(q) * sp * 0.5); } cx.closePath(); cx.fill(); cx.stroke();
   } else { // fago con cola (Caudovirales)
-    cx.beginPath(); for (let i = 0; i < 6; i++) { const q = i / 6 * 6.283; cx.lineTo(Math.cos(q) * 5, -6 + Math.sin(q) * 5); } cx.closePath(); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(0, -1); cx.lineTo(0, 7); for (let k = -1; k <= 1; k += 2) { cx.moveTo(0, 7); cx.lineTo(k * 5, 11 + Math.sin(G.t * 8) * 1); cx.moveTo(0, 7); cx.lineTo(k * 2.5, 12); } cx.stroke();
+    cx.beginPath(); for (let i = 0; i < 6; i++) { const q = i / 6 * 6.283; cx.lineTo(Math.cos(q) * 5 - sp * 0.4, -6 - sp + Math.sin(q) * 5); } cx.closePath(); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(sp * 0.6, -1); cx.lineTo(sp * 0.6, 7); for (let k = -1; k <= 1; k += 2) { cx.moveTo(sp * 0.6, 7); cx.lineTo(sp * 0.6 + k * 5, 11 + Math.sin(G.t * 8) * 1); cx.moveTo(sp * 0.6, 7); cx.lineTo(sp * 0.6 + k * 2.5, 12); } cx.stroke();
   }
+  if (dec > 0) { cx.fillStyle = 'rgba(180,255,220,0.7)'; for (let k = 0; k < 4; k++) { cx.beginPath(); cx.arc(Math.cos(k * 1.7) * sp * 1.3, Math.sin(k * 2.3) * sp * 1.3, 0.8, 0, 6.283); cx.fill(); } }
   cx.restore(); cx.globalAlpha = 1;
 }
+// cabeza que se vuelve más aguzada con la evolución de forma
+function headPath(x, y, a, len, rad, pt) {
+  cx.save(); cx.translate(x, y); cx.rotate(a); cx.beginPath();
+  cx.moveTo(-len / 2, -rad); cx.lineTo(len / 2 * (1 - pt * 0.3), -rad * (1 - pt * 0.25));
+  cx.quadraticCurveTo(len / 2 + rad * (1 + pt * 1.6), 0, len / 2 * (1 - pt * 0.3), rad * (1 - pt * 0.25));
+  cx.lineTo(-len / 2, rad); cx.arc(-len / 2, 0, rad, Math.PI / 2, Math.PI * 1.5); cx.closePath(); cx.restore();
+}
 function drawPlayer() {
-  const segs = G.segs, t = G.t, w = clamp(G.w, 0, 1);
+  const segs = G.segs, t = G.t, w = clamp(G.w, 0, 1), P = G.ph;
   const dorm = G.mode === 'dorm';
-  const stressed = G.w < 0.35 && G.mode !== 'title';
-  // brillo
+  const stressed = G.w < 0.35 && G.mode === 'play';
+  const sz = 1 + 0.12 * P.size, lv = evoLevel();
+  const app = G.t - G.spawnT < 1.4 ? sstep(0, 1.4, G.t - G.spawnT) : 1; // aparición repentina
+  const kinds = Object.keys(G.doses).filter(k => G.doses[k] > 0 && KINDS[k].col);
+  // brillo (crece con la evolución)
   cx.globalCompositeOperation = 'lighter';
-  for (let i = segs.length - 1; i >= 0; i--) { const s = segs[i]; glow(s.x, s.y, i === 0 ? 40 : 30, gColor(s.g), (0.15 + 0.25 * w) * (dorm ? 0.5 : 1)); }
+  for (let i = segs.length - 1; i >= 0; i--) { const s = segs[i]; glow(s.x, s.y, (i === 0 ? 40 : 30) * sz * (1 + lv * 0.03) * app, gColor(s.g), (0.13 + 0.2 * w + lv * 0.01) * (dorm ? 0.5 : 1) * Math.min(1, 2.4 / Math.sqrt(segs.length))); }
+  if (G.t - G.pulse < 1.6) { const k = (G.t - G.pulse) / 1.6; for (const s of segs) glow(s.x, s.y, 20 + 60 * k, [255, 214, 110], 0.5 * (1 - k)); }
   cx.globalCompositeOperation = 'source-over';
-  // flagelo en la cola
-  const tl = segs[segs.length - 1];
-  cx.strokeStyle = rgb(gColor(tl.g), 0.5); cx.lineWidth = 1.2; cx.beginPath();
-  for (let i = 0; i < 18; i++) { const d = 8 + i * 2.6, wv = Math.sin(t * 14 - i * 0.6) * (1 + i * 0.25); cx.lineTo(tl.x - Math.cos(tl.a) * d + Math.cos(tl.a + 1.57) * wv, tl.y - Math.sin(tl.a) * d + Math.sin(tl.a + 1.57) * wv); }
-  cx.stroke();
+  if (app < 1) { const h = segs[0], k = app; cx.strokeStyle = `rgba(230,255,245,${1 - k})`; cx.lineWidth = 2; for (let r = 0; r < 3; r++) { cx.beginPath(); cx.arc(h.x, h.y, (20 + r * 25) * k * 3, 0, 6.283); cx.stroke(); } }
+  // flagelos en la cola: más flagelos = más rápido
+  const tl = segs[segs.length - 1], nf = 1 + P.flag, fl = 18 + 4 * P.flag;
+  cx.strokeStyle = rgb(gColor(tl.g), 0.5); cx.lineWidth = 1.2;
+  for (let f = 0; f < nf; f++) {
+    const off = (f - (nf - 1) / 2) * 0.28; cx.beginPath();
+    for (let i = 0; i < fl; i++) { const d = 8 * sz + i * 2.6, wv = Math.sin(t * (14 + P.flag) - i * 0.6 + f) * (1 + i * 0.25), aa = tl.a + off * Math.min(1, i / 6); cx.lineTo(tl.x - Math.cos(aa) * d + Math.cos(aa + 1.57) * wv, tl.y - Math.sin(aa) * d + Math.sin(aa + 1.57) * wv); }
+    cx.stroke();
+  }
+  // flagelos laterales (peritricos) desde el nivel 2
+  if (P.flag >= 2) { cx.strokeStyle = rgb(gColor(segs[0].g), 0.3); cx.lineWidth = 0.8;
+    for (let i = 1; i < segs.length; i += 3) { const s = segs[i]; for (const sd of [-1, 1]) { cx.beginPath(); for (let k = 0; k < 7; k++) { const d = 6 * sz + k * 2.2, aa = s.a + sd * (1.9 + k * 0.05); cx.lineTo(s.x + Math.cos(aa) * d + Math.sin(t * 12 + k + i) * 1.2, s.y + Math.sin(aa) * d + Math.cos(t * 12 + k + i) * 1.2); } cx.stroke(); } } }
   for (let i = segs.length - 1; i >= 0; i--) {
     const s = segs[i], col = gColor(s.g);
-    const br = 1 + 0.06 * Math.sin(t * 3 - i * 0.5);
+    const br = (1 + 0.06 * Math.sin(t * 3 - i * 0.5)) * sz * app;
     const len = (i === 0 ? 14 : 12) * br, rad = (i === 0 ? 6.5 : 5.2) * br;
-    capsule(s.x, s.y, s.a, len, rad);
+    // ganchos de capa S
+    if (P.spike) { cx.strokeStyle = 'rgba(255,240,200,0.6)'; cx.lineWidth = 0.9; cx.beginPath();
+      for (let k = 0; k < P.spike * 2; k++) for (const sd of [-1, 1]) { const ox = (k / (P.spike * 2 - 0.5) - 0.5) * len, ca = Math.cos(s.a), sa = Math.sin(s.a);
+        const bx = s.x + ca * ox - sa * rad * sd, by = s.y + sa * ox + ca * rad * sd, ex = bx - sa * sd * (4 + P.spike), ey = by + ca * sd * (4 + P.spike);
+        cx.moveTo(bx, by); cx.lineTo(ex, ey); cx.lineTo(ex + ca * 1.8, ey + sa * 1.8); }
+      cx.stroke(); }
+    if (i === 0) headPath(s.x, s.y, s.a, len, rad, Math.min(1, lv / 6)); else capsule(s.x, s.y, s.a, len, rad);
     let fill = col;
     if (s.inf) fill = mix(col, [40, 70, 60], clamp((t - s.inf) / 3.5, 0, 1));
-    cx.fillStyle = rgb(fill, dorm ? 0.5 : 0.85); cx.fill();
+    cx.fillStyle = rgb(fill, dorm ? 0.5 : 0.88); cx.fill();
     cx.strokeStyle = stressed ? `rgba(255,${120 + 80 * Math.sin(t * 6)},120,0.8)` : rgb(mix(col, [255, 255, 255], 0.5), 0.9);
     cx.lineWidth = 1.3; cx.stroke();
     // nucleoide
     cx.fillStyle = 'rgba(255,255,255,0.35)'; cx.beginPath(); cx.ellipse(s.x, s.y, len * 0.22, rad * 0.35, s.a, 0, 6.283); cx.fill();
+    // gránulos con el color de los genes adquiridos
+    if (kinds.length && i > 0) { const kc = KINDS[kinds[i % kinds.length]].col; cx.fillStyle = kc; cx.globalAlpha = 0.85; cx.beginPath(); cx.arc(s.x - Math.cos(s.a) * len * 0.25, s.y - Math.sin(s.a) * len * 0.25, 1.8 * sz, 0, 6.283); cx.fill(); cx.globalAlpha = 1; }
     // mutante pendiente: anillo iridiscente
     if (s.mut) {
       const mc = gColor(s.mut.g), k = (t - s.mut.t0) / 3.5;
-      cx.strokeStyle = rgb(mc, 0.9); cx.lineWidth = 1.5; cx.beginPath(); cx.arc(s.x, s.y, 12 + 3 * Math.sin(t * 8), -Math.PI / 2, -Math.PI / 2 + k * 6.283); cx.stroke();
+      cx.strokeStyle = rgb(mc, 0.9); cx.lineWidth = 1.5; cx.beginPath(); cx.arc(s.x, s.y, 12 * sz + 3 * Math.sin(t * 8), -Math.PI / 2, -Math.PI / 2 + k * 6.283); cx.stroke();
     }
     if (s.inf) { cx.fillStyle = 'rgba(140,255,210,0.8)'; for (let k = 0; k < 4; k++) { cx.beginPath(); cx.arc(s.x + Math.cos(t * 3 + k * 1.6) * 3, s.y + Math.sin(t * 3 + k * 1.6) * 2, 1, 0, 6.283); cx.fill(); } }
   }
-  // pili en la cabeza
-  const h = segs[0];
-  cx.strokeStyle = rgb(gColor(h.g), 0.5); cx.lineWidth = 0.7; cx.beginPath();
-  for (let k = -2; k <= 2; k++) { const q = h.a + k * 0.35; cx.moveTo(h.x + Math.cos(q) * 9, h.y + Math.sin(q) * 7); cx.lineTo(h.x + Math.cos(q) * (15 + Math.sin(t * 4 + k) * 1.5), h.y + Math.sin(q) * (13 + Math.sin(t * 4 + k))); }
+  // pili en la cabeza: la "boca" que crece
+  const h = segs[0], np = 5 + 3 * P.pili, pl = 15 + 6 * P.pili;
+  cx.strokeStyle = rgb(gColor(h.g), 0.55); cx.lineWidth = 0.7 + 0.15 * P.pili; cx.beginPath();
+  for (let k = 0; k < np; k++) { const q = h.a + (k / (np - 1) - 0.5) * (1.4 + 0.25 * P.pili); const r0 = 8 * sz, r1 = (pl + Math.sin(t * 4 + k) * 1.5) * sz; cx.moveTo(h.x + Math.cos(q) * r0, h.y + Math.sin(q) * r0); cx.lineTo(h.x + Math.cos(q) * r1, h.y + Math.sin(q) * r1); }
   cx.stroke();
+  if (P.pili) { cx.strokeStyle = 'rgba(255,255,255,0.05)'; cx.beginPath(); cx.arc(h.x, h.y, 40 + 28 * P.pili, 0, 6.283); cx.stroke(); }
   if (dorm) { cx.strokeStyle = 'rgba(255,245,220,0.9)'; cx.lineWidth = 2.5; cx.beginPath(); cx.ellipse(h.x, h.y, 11, 8, h.a, 0, 6.283); cx.stroke(); }
 }
 
@@ -679,6 +906,7 @@ function portalInfo(p) {
     l1: (p.dir > 0 ? s.deeper : s.up) + ' · ' + (last ? s.endT : L.name[lang]),
     l2: last ? '' : `${fmt('T', L.core.T)} · pH ${fmt('pH', L.core.pH)} · ${fmt('S', L.core.S)}`,
     wc: wNext > 0.45 ? '#9dffb0' : wNext > 0.12 ? '#ffd66b' : '#ff7a7a',
+    need: last ? [] : AX.filter(a => perf(a, L.core[a], G.g, null) < 0.5).map(a => { const d = L.core[a] - G.g[a].m; return a === 'T' ? (d > 0 ? 'heat' : 'cold') : a === 'pH' ? (d < 0 ? 'acid' : 'alk') : (d > 0 ? 'salt' : 'broad'); }),
   };
 }
 function drawPortalHints() {
@@ -731,6 +959,8 @@ function drawPortalHints() {
     const tw = cx.measureText(l2).width, al = cx.textAlign;
     const dx = al === 'left' ? bx + tw + 8 * u : al === 'right' ? bx - tw - 8 * u : bx + tw / 2 + 8 * u;
     cx.fillStyle = inf.wc; cx.beginPath(); cx.arc(dx, by + 11 * u, 3.5 * u, 0, 6.283); cx.fill();
+    // colores de genes que te faltan para ese nicho
+    inf.need.forEach((k, j) => { const nx = al === 'right' ? dx - (12 + j * 10) * u : dx + (12 + j * 10) * u; cx.fillStyle = KINDS[k].col; cx.beginPath(); cx.arc(nx, by + 11 * u, 3.5 * u, 0, 6.283); cx.fill(); });
     cx.shadowBlur = 0;
   }
 }
@@ -743,7 +973,7 @@ function drawHUD() {
   const vg = cx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,6,0.55)'); cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
   if (G.trans) { const k = G.t - G.trans.t0; const a = k < 1.6 ? sstep(0.6, 1.6, k) : 1 - sstep(1.6, 2.8, k); cx.fillStyle = `rgba(230,245,255,${a * 0.9})`; cx.fillRect(0, 0, W, H); }
-  if (G.mode === 'title') return;
+  if (G.mode === 'title' || G.mode === 'choose') return;
   drawPortalHints();
   const u = U, pw = 168 * u, ph = 46 * u, x0 = 14 * u;
   let y0 = H - 14 * u - ph * 3 - 8 * u * 2;
@@ -753,7 +983,12 @@ function drawHUD() {
     const A = AXES[a];
     cx.fillStyle = 'rgba(0,8,16,0.35)'; rr(x0, y0, pw, ph, 8 * u); cx.fill();
     const gx = x0 + 8 * u, gw = pw - 16 * u, gy = y0 + ph - 7 * u, gh = ph - 22 * u;
-    const col = gColor(G.g);
+    const col = axisColor(a);
+    const nk = G.need.find(k => KIND_AX[k] === a);
+    if (nk) { const kc = hexRgb(KINDS[nk].col), pu = 0.5 + 0.5 * Math.sin(G.t * 4); cx.strokeStyle = rgb(kc, 0.4 + 0.5 * pu); cx.lineWidth = 1.5 * u; rr(x0, y0, pw, ph, 8 * u); cx.stroke();
+      const gv = clamp((v - A.min) / (A.max - A.min), 0, 1), dirR = v > G.g[a].m + G.off[a];
+      cx.fillStyle = rgb(kc, 0.9); cx.beginPath(); const ax0 = x0 + pw + 8 * u, ay0 = y0 + ph / 2; cx.arc(ax0 + 4 * u, ay0, 5 * u, 0, 6.283); cx.fill();
+      cx.fillStyle = 'rgba(2,10,18,0.9)'; cx.font = `bold ${8 * u}px system-ui, sans-serif`; cx.textAlign = 'center'; cx.fillText(dirR ? '▶' : '◀', ax0 + 4 * u, ay0 + 3 * u); cx.font = `${11 * u}px system-ui, sans-serif`; }
     cx.beginPath(); cx.moveTo(gx, gy);
     for (let i = 0; i <= 60; i++) { const xv = A.min + (A.max - A.min) * i / 60; cx.lineTo(gx + gw * i / 60, gy - gh * perf(a, xv, G.g, G.off)); }
     cx.lineTo(gx + gw, gy); cx.closePath(); cx.fillStyle = rgb(col, 0.28); cx.fill(); cx.strokeStyle = rgb(col, 0.8); cx.lineWidth = 1; cx.stroke();
@@ -790,7 +1025,21 @@ function drawHUD() {
   cx.fillText(LAYERS[G.layer].name[lang], 34 * u, (22 + G.layer * 14 + 4) * u);
   // íconos de genes adquiridos
   let gx2 = 34 * u; const gy2 = (22 + G.layer * 14 + 18) * u;
-  for (const tr of G.traits) { cx.fillStyle = TRAITS[tr].col; cx.beginPath(); cx.arc(gx2, gy2, 3.5 * u, 0, 6.283); cx.fill(); gx2 += 10 * u; }
+  cx.font = `${9 * u}px system-ui, sans-serif`; cx.textAlign = 'left';
+  for (const k in KINDS) { const n = G.doses[k] || 0; if (!n) continue; cx.fillStyle = KINDS[k].col; cx.beginPath(); cx.arc(gx2, gy2, 4 * u, 0, 6.283); cx.fill(); cx.fillStyle = 'rgba(230,245,255,0.7)'; cx.fillText(n, gx2 + 6 * u, gy2 + 3 * u); gx2 += (n > 9 ? 26 : 20) * u; }
+  // rasgos de forma (fenotipo)
+  let px2 = 34 * u; const py2 = gy2 + 16 * u, IC = { flag: '〰', pili: '✺', spike: '✦', size: '●' };
+  for (const k in PHENO) { const n = G.ph[k]; if (!n) continue; cx.fillStyle = '#ffd166'; cx.font = `${11 * u}px system-ui, sans-serif`; cx.fillText(IC[k], px2, py2 + 4 * u);
+    for (let j = 0; j < PHENO[k].max; j++) { cx.fillStyle = j < n ? '#ffd166' : 'rgba(255,214,110,0.2)'; cx.beginPath(); cx.arc(px2 + 16 * u + j * 6 * u, py2, 2 * u, 0, 6.283); cx.fill(); }
+    px2 += (22 + PHENO[k].max * 6) * u; }
+}
+const KIND_AX = { heat: 'T', cold: 'T', acid: 'pH', alk: 'pH', salt: 'S', broad: 'S' };
+// color de cada curva según hacia dónde se adaptó tu linaje (rojo calor, azul frío, amarillo ácido, violeta alcalino, rosa sal)
+function axisColor(a) {
+  const base = [120, 235, 170], m = G.g[a].m;
+  if (a === 'T') return m >= 25 ? mix(base, hexRgb(KINDS.heat.col), clamp((m - 25) / 55, 0, 1)) : mix(base, hexRgb(KINDS.cold.col), clamp((25 - m) / 30, 0, 1));
+  if (a === 'pH') return m <= 7 ? mix(base, hexRgb(KINDS.acid.col), clamp((7 - m) / 5, 0, 1)) : mix(base, hexRgb(KINDS.alk.col), clamp((m - 7) / 4, 0, 1));
+  return mix(base, hexRgb(KINDS.salt.col), clamp(m / 22, 0, 1));
 }
 function rr(x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
 
@@ -881,7 +1130,7 @@ function drawMap() {
   cx.textAlign = 'left'; cx.fillStyle = '#fff'; cx.font = `300 ${24 * u}px system-ui, sans-serif`;
   cx.fillText(mapEnd ? s.endT : s.nicheMap, m.l, 38 * u);
   cx.font = `${11 * u}px system-ui, sans-serif`; cx.fillStyle = 'rgba(220,240,255,0.55)';
-  cx.fillText(mapEnd ? s.endS + '  ·  ' + s.trail + ': ─' : s.nicheSub, m.l, 58 * u);
+  cx.fillText(mapEnd ? s.endS.replace('{n}', G.visited.size) + '  ·  ' + s.trail + ': ─' : s.nicheSub, m.l, 58 * u);
   if (!mapEnd) { cx.textAlign = 'right'; cx.fillText(s.close + ' (N)', W - m.r, 38 * u); }
 }
 
@@ -903,7 +1152,7 @@ function resize() {
 addEventListener('resize', resize);
 
 // ---------- guardado ----------
-function save() { try { localStorage.setItem('nicho_save', JSON.stringify({ layer: G.layer, g: G.g, traits: [...G.traits], deepest: G.deepest, stats: G.stats, trail: G.trail.slice(-300), seen: G.seen })); } catch (e) {} }
+function save() { try { localStorage.setItem('nicho_save', JSON.stringify({ layer: G.layer, g: G.g, traits: [...G.traits], deepest: G.deepest, stats: G.stats, trail: G.trail.slice(-300), seen: G.seen, ph: G.ph, doses: G.doses, visited: [...G.visited], start: G.start })); } catch (e) {} }
 function load() { try { return JSON.parse(localStorage.getItem('nicho_save') || 'null'); } catch (e) { return null; } }
 
 // ---------- interfaz DOM ----------
@@ -913,12 +1162,14 @@ function applyLang() {
   $('tTitle').textContent = s.title; $('tSub').textContent = s.sub; $('tStart').textContent = s.start; $('tHint').textContent = s.hint;
   $('bLang').textContent = lang === 'es' ? 'EN' : 'ES';
   $('bInfo').title = s.sources; $('bMap').title = s.nicheMap;
-  const sv = load(); $('tNew').style.display = sv && sv.layer > 0 ? 'inline-block' : 'none';
+  const sv = load(); $('tNew').style.display = sv && sv.g ? 'inline-block' : 'none';
   $('tNew').textContent = lang === 'es' ? 'nuevo linaje' : 'new lineage';
   $('infoBody').innerHTML = `<h3>${lang === 'es' ? 'Cómo se juega' : 'How to play'}</h3>
     <p>${lang === 'es'
       ? 'Nada con el cursor (o el dedo). Come partículas para crecer: cada división puede traer una mutación al azar, y el ambiente decide si se queda (barrido selectivo) o se pierde. Come otras bacterias para adquirir sus genes. Las curvas abajo a la izquierda son tu nicho: dónde creces en temperatura, pH y sal. El orbe rojo lleva a un ambiente más extremo; el azul, de vuelta. N abre el mapa del nicho.'
       : 'Swim with the cursor (or your finger). Eat particles to grow: each division may bring a random mutation, and the environment decides whether it stays (selective sweep) or is lost. Eat other bacteria to acquire their genes. The curves at the bottom left are your niche: where you grow in temperature, pH and salt. The red orb leads to a more extreme environment; the blue one, back. N opens the niche map.'}</p>
+    <h3>${lang === 'es' ? 'Colores de genes' : 'Gene colors'}</h3><p>${Object.keys(KINDS).map(k => `<span style="color:${KINDS[k].col}">●</span> ${KINDS[k][lang]}`).join(' &nbsp; ')} &nbsp; <span style="color:#ffd166">●</span> ${lang === 'es' ? 'forma (flagelos, pili, ganchos, tamaño)' : 'shape (flagella, pili, hooks, size)'}</p>
+    <p>${lang === 'es' ? 'Cada bacteria de un color corre tu nicho en esa dirección. Las curvas del nicho se tiñen según cómo te adaptaste y, si te falta tolerancia, se enciende el color que necesitas. Hongos: sus hifas dan carbono pero enredan. Oleadas: comunidades enteras que pasan con la corriente.' : 'Each bacterium of a color pushes your niche that way. The niche curves take on the color of your adaptation and, when you lack tolerance, light up with the color you need. Fungi: hyphae give carbon but tangle you. Waves: whole communities drifting past.'}</p>
     <h3>${lang === 'es' ? 'Fuentes' : 'Sources'}</h3><ol>${SOURCES.map(x => `<li>${x}</li>`).join('')}</ol>
     <p class="cred"><img src="img/logoMEL.svg" alt="MEL"><br>Microbial Ecophysiology Lab · Fundación Ciencia &amp; Vida · 2026</p>`;
 }
@@ -927,20 +1178,58 @@ $('bSnd').onclick = e => { e.stopPropagation(); toggleSound(); };
 $('bMap').onclick = e => { e.stopPropagation(); if (G.mode === 'play') openMap(false); else if (G.mode === 'map') closeMap(); };
 $('bInfo').onclick = e => { e.stopPropagation(); $('info').classList.toggle('open'); };
 $('info').onclick = e => { if (e.target.id === 'info') $('info').classList.remove('open'); };
-$('tNew').onclick = e => { e.stopPropagation(); try { localStorage.removeItem('nicho_save'); } catch (er) {} startGame(true); };
-$('title').onclick = () => startGame();
+$('tNew').onclick = e => { e.stopPropagation(); try { localStorage.removeItem('nicho_save'); } catch (er) {} Sound.start(); openChoose(); };
+$('title').onclick = () => onTitle();
 
-function startGame(fresh) {
+function onTitle() {
   if (G.mode !== 'title') return;
   Sound.start();
+  const sv = load();
+  if (sv && sv.g) beginGame(sv, null); else openChoose();
+}
+// elegir el tipo de inicio: acidófilo, neutrófilo, termófilo o psicrófilo (30 s o elige el azar)
+let chooseIv = null;
+function openChoose() {
+  G.mode = 'choose'; $('title').classList.add('gone');
+  const s = T_();
+  $('choose').innerHTML = `<div class="ch-t">${s.choose}</div><div class="cards">${Object.keys(STARTS).map((k, i) => {
+    const S = STARTS[k], tx = S[lang];
+    return `<div class="card" data-k="${k}" style="--c:${S.col}"><div class="cell"><i></i><i></i><i></i></div><b>${tx[0]}</b><span>${tx[1]}</span><em>${tx[2]}</em><small>${i + 1}</small></div>`;
+  }).join('')}</div><div class="ch-auto">${s.auto} <b id="chN">30</b> s</div>`;
+  $('choose').classList.add('open');
+  $('choose').querySelectorAll('.card').forEach(c => c.onclick = e => { e.stopPropagation(); chooseStart(c.dataset.k); });
+  const t0 = performance.now(); clearInterval(chooseIv);
+  chooseIv = setInterval(() => {
+    const left = Math.max(0, 30 - (performance.now() - t0) / 1000);
+    const n = $('chN'); if (n) n.textContent = Math.ceil(left);
+    if (left <= 0) chooseStart(pick(Object.keys(STARTS)));
+  }, 250);
+}
+function chooseStart(k) {
+  if (G.mode !== 'choose') return;
+  clearInterval(chooseIv); $('choose').classList.remove('open');
+  beginGame(null, k);
+}
+function beginGame(sv, k) {
   $('title').classList.add('gone');
-  const sv = fresh ? null : load();
   G.g = newGenome(); G.traits = new Set(); G.trail = []; G.stats = { sweeps: 0, purged: 0, genes: 0, desc: 0 }; G.deepest = 0; G.seen = {};
+  G.ph = { flag: 0, pili: 0, spike: 0, size: 0 }; G.doses = {}; G.visited = new Set();
   let L0 = 0;
-  if (sv && sv.g) { G.g = clampG(sv.g); G.traits = new Set(sv.traits || []); G.deepest = sv.deepest || 0; G.stats = sv.stats || G.stats; G.trail = sv.trail || []; G.seen = sv.seen || {}; L0 = sv.layer || 0; }
-  G.off = { T: 0, pH: 0, S: 0 }; G.biomass = 0; G.grace = 10;
-  G.mode = 'play'; resetPlayer(4, 0, 0); enterLayer(L0);
-  setTimeout(() => cap('intro'), 2500); setTimeout(() => cap('portal'), 12000);
+  if (sv && sv.g) {
+    G.g = clampG(sv.g); G.traits = new Set(sv.traits || []); G.deepest = sv.deepest || 0; G.stats = sv.stats || G.stats; G.trail = sv.trail || []; G.seen = sv.seen || {}; L0 = sv.layer || 0;
+    G.ph = Object.assign(G.ph, sv.ph || {}); G.doses = sv.doses || {}; G.visited = new Set(sv.visited || []); G.start = sv.start || 'neutro';
+  } else {
+    const S = STARTS[k]; G.start = k; G.g = clampG(JSON.parse(JSON.stringify(S.g))); L0 = S.layer; G.deepest = L0;
+  }
+  SPACING = 15 * (1 + 0.1 * G.ph.size);
+  G.off = { T: 0, pH: 0, S: 0 }; G.biomass = 0; G.grace = 12;
+  G.mode = 'play'; resetPlayer(3, 0, 0); enterLayer(L0);
+  // aparece de repente, en el rincón de la capa que mejor le acomoda
+  let bx = 0, by = 0, bw = -1;
+  for (let i = 0; i < 60; i++) { const a = rnd(0, 6.283), r = rnd(0, 1450), x = Math.cos(a) * r, y = Math.sin(a) * r; const w = fitness(G.g, envAt(x, y), null); if (w > bw && G.portals.every(q => Math.hypot(q.x - x, q.y - y) > 250)) { bw = w; bx = x; by = y; } }
+  resetPlayer(3, bx, by); G.cam.x = bx; G.cam.y = by;
+  G.spawnT = G.t; burst(bx, by, gColor(G.g), 40, 160, 1.6); burst(bx, by, [255, 255, 255], 20, 90, 1); Sound.gene();
+  setTimeout(() => cap('intro'), 2500); setTimeout(() => cap('portal'), 12000); setTimeout(() => cap('dose'), 22000);
 }
 
 // arranque: modo atracción en la charca
@@ -950,5 +1239,5 @@ for (let i = 0; i < 70; i++) spawnFood(true);
 for (let i = 0; i < 8; i++) spawnPrey();
 G.cils.push({ x: 400, y: 300, a: 2, full: 0, ph: 0 });
 requestAnimationFrame(frame);
-window.NICHO = G; window.NICHO_DBG = { enterLayer, openMap, closeMap, gainTrait, divide, startTrans, endGame, envAt }; // para depurar
+window.NICHO = G; window.NICHO_DBG = { enterLayer, openMap, closeMap, gainTrait, gainPheno, divide, startTrans, endGame, envAt, startWave, chooseStart, openChoose }; // para depurar
 })();
