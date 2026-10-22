@@ -1302,12 +1302,13 @@ function drawGiants(back) {
     const x = g.x - (G.cam.x - g.cx0) * G.cam.z * f, y = g.y - (G.cam.y - g.cy0) * G.cam.z * f + Math.sin(g.ph * 0.3 + g.wob) * g.S * 0.08;
     cx.save(); cx.translate(x, y); if (g.dir < 0) cx.scale(-1, 1);
     cx.rotate(Math.sin(g.ph * 0.25 + g.wob) * 0.08);
-    if (!back) try { cx.filter = 'blur(3px)'; } catch (e) {}
     cx.fillStyle = back ? 'rgba(170,215,230,0.12)' : 'rgba(200,235,245,0.07)';
     cx.strokeStyle = back ? 'rgba(200,235,245,0.28)' : 'rgba(220,245,255,0.16)';
     cx.lineWidth = back ? 1.5 : 3;
     GIANT_DRAW[g.type](g.S, g.ph);
-    try { cx.filter = 'none'; } catch (e) {}
+    if (!back) { // halo suave (sin ctx.filter, que es muy lento): segundo trazo ancho y tenue
+      cx.strokeStyle = 'rgba(220,245,255,0.05)'; cx.lineWidth = 12; cx.fillStyle = 'rgba(0,0,0,0)'; GIANT_DRAW[g.type](g.S, g.ph);
+    }
     cx.restore();
     if (back && GIANTS[g.type]) { cx.font = `italic ${11 * U}px Georgia, serif`; cx.textAlign = 'center'; cx.fillStyle = 'rgba(210,240,255,0.32)'; cx.fillText(GIANTS[g.type][lang], x, y + g.S * 0.75); }
     if (onScreenPx(x, y)) cap('giant');
