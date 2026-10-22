@@ -97,5 +97,6 @@
 <script src="js/data.js?v=1.4.1"></script>
 <script src="js/audio.js?v=1.4.1"></script>
 <script src="js/game.js?v=1.4.1"></script>
+<script>/* en celular/tablet: el primer toque pone pantalla completa (sin barras del navegador, igual en todos) */(function(){if(!matchMedia('(pointer: coarse)').matches)return;var d=document,e=d.documentElement;if(!(d.fullscreenEnabled||d.webkitFullscreenEnabled))return;function go(){removeEventListener('pointerdown',go,true);if(d.fullscreenElement||d.webkitFullscreenElement)return;try{var r=e.requestFullscreen||e.webkitRequestFullscreen,p=r&&r.call(e,{navigationUI:'hide'});p&&p.catch&&p.catch(function(){});}catch(_){}}addEventListener('pointerdown',go,true);})();</script>
 </body>
 </html>
